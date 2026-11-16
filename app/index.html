@@ -341,8 +341,15 @@
 
   // Samsung's native player (only inside the installed TV app): plays any HLS stream, follows redirects,
   // no CORS limits, honours per-channel user agents. Rendered through the <object id="av"> hole.
-  var AV = null;
+  var AV = null, useAV = false;
   try { if (window.webapis && webapis.avplay) AV = webapis.avplay; } catch (e) {}
+  function setPlayerClass() { document.body.className = (mode === 'guide' ? 'guide' : '') + (useAV ? ' avp' : ''); }
+  // AVPlay can't fail over by itself: on error / no audio, hand the channel to hls.js (works here: file:// origin).
+  function avFallback(token) {
+    if (token !== playToken) return;
+    avStop(); useAV = false; setPlayerClass(); clearTimeout(failTimer); tryHls(token);
+  }
+  function hasTrack(list, type) { for (var i = 0; i < list.length; i++) if (list[i].type === type) return true; return false; }
   function avRect() {
     try {
       if (mode === 'guide') AV.setDisplayRect(Math.round(0.63 * 1920), Math.round(0.035 * 1080), Math.round(0.35 * 1920), Math.round(0.197 * 1920));
@@ -360,24 +367,32 @@
       AV.setListener({
         onbufferingstart: function () { if (token === playToken) spin(true); },
         onbufferingcomplete: function () { if (token === playToken) spin(false); },
-        onerror: function () { fail(token); },
+        onerror: function () { avFallback(token); },
         onstreamcompleted: function () { if (token === playToken) avPlay(c, token); }
       });
       AV.prepareAsync(function () {
         if (token !== playToken) return;
-        try { AV.play(); } catch (e) { return fail(token); }
+        try { AV.play(); } catch (e) { return avFallback(token); }
         clearTimeout(failTimer); spin(false); hideMsg();
-      }, function () { fail(token); });
+        // Some streams (separate audio track) play silently in AVPlay: detect and switch to hls.js.
+        setTimeout(function () {
+          if (token !== playToken || !useAV) return;
+          try {
+            var cur = AV.getCurrentStreamInfo(), all = AV.getTotalTrackInfo();
+            if (hasTrack(all, 'AUDIO') && !hasTrack(cur, 'AUDIO')) avFallback(token);
+          } catch (e) {}
+        }, 4000);
+      }, function () { avFallback(token); });
       failTimer = setTimeout(function () {
         var st = ''; try { st = AV.getState(); } catch (e) {}
-        if (token === playToken && st !== 'PLAYING') fail(token);
+        if (token === playToken && st !== 'PLAYING') avFallback(token);
       }, 25000);
-    } catch (e) { fail(token); }
+    } catch (e) { avFallback(token); }
   }
   if (AV) {
-    document.body.className += ' avp';
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) avStop(); else if (current) play(current);
+      if (document.hidden) { avStop(); stopHls(); try { video.pause(); } catch (e) {} }
+      else if (current) play(current);
     });
   }
 
@@ -387,11 +402,14 @@
     current = c; store('last', c.url);
     var token = ++playToken;
     stopHls(); hideMsg(); spin(true); clearTimeout(failTimer);
-    if (AV) {
+    // Pluto / Samsung TV Plus (jmp2.uk) streams have a separate audio track that AVPlay plays silently -> hls.js.
+    if (AV && !/jmp2\.uk\//.test(c.url)) {
+      useAV = true; setPlayerClass();
       if (mode === 'guide') renderRows(); else showBanner();
       avPlay(c, token);
       return;
     }
+    if (AV) { avStop(); useAV = false; setPlayerClass(); }
     video.removeAttribute('src'); try { video.load(); } catch (e) {}
     if (mode === 'guide') renderRows(); else showBanner();
     if (plutoUrl(c)) { tryHls(token); return; }
@@ -444,8 +462,8 @@
   // ---------- modes ----------
   function setMode(m) {
     mode = m;
-    document.body.className = (m === 'guide' ? 'guide' : '') + (AV ? ' avp' : '');
-    if (AV) avRect();
+    setPlayerClass();
+    if (useAV) avRect();
     $('clock').style.display = m === 'guide' ? 'block' : 'none';
     if (m === 'guide') {
       $('banner').className = '';
