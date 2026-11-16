@@ -15,6 +15,10 @@
     font-family: "SamsungOne", "Samsung Sans", "Roboto", "Helvetica Neue", Arial, sans-serif; cursor: none; }
   body { background: #000; }
 
+  #av { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 1; display: none; }
+  body.guide #av { left: 63vw; top: 3.5vh; width: 35vw; height: 19.7vw; z-index: 5; }
+  body.avp #av { display: block; }
+  body.avp #video { display: none; }
   #video { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: #000; object-fit: contain; z-index: 1;
     transition: all .25s ease; }
   body.guide #video { left: 63vw; top: 3.5vh; width: 35vw; height: 19.7vw; border-radius: .6vh; box-shadow: 0 0 0 .2vh var(--line); z-index: 5; }
@@ -104,6 +108,7 @@
 </head>
 <body class="guide">
 <video id="video" autoplay playsinline></video>
+<object id="av" type="application/avplayer"></object>
 
 <div id="guide">
   <div id="info"></div>
@@ -170,12 +175,14 @@
         while ((m = re.exec(l))) cur.attrs[m[1]] = m[2];
         var q = l.lastIndexOf('",');
         cur.name = (q >= 0 ? l.slice(q + 2) : l.split(',').pop()).trim();
+      } else if (cur && l.indexOf('#EXTVLCOPT:http-user-agent=') === 0) {
+        cur.ua = l.slice(27);
       } else if (cur && l && l[0] !== '#') {
         var a = cur.attrs;
         var gs = (a['group-title'] || 'Other').split(';').map(function (g) {
           g = g.trim(); return g === 'Stremio Favourites' ? 'Favourites' : g; });
         out.push({ name: cur.name || a['tvg-name'] || 'Channel', id: a['tvg-id'] || '', logo: a['tvg-logo'] || '',
-                   num: parseInt(a['tvg-chno'], 10) || (out.length + 1), groups: gs, url: l });
+                   num: parseInt(a['tvg-chno'], 10) || (out.length + 1), groups: gs, url: l, ua: cur.ua || '' });
         cur = null;
       }
     }
@@ -332,12 +339,59 @@
 
   function stopHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 
+  // Samsung's native player (only inside the installed TV app): plays any HLS stream, follows redirects,
+  // no CORS limits, honours per-channel user agents. Rendered through the <object id="av"> hole.
+  var AV = null;
+  try { if (window.webapis && webapis.avplay) AV = webapis.avplay; } catch (e) {}
+  function avRect() {
+    try {
+      if (mode === 'guide') AV.setDisplayRect(Math.round(0.63 * 1920), Math.round(0.035 * 1080), Math.round(0.35 * 1920), Math.round(0.197 * 1920));
+      else AV.setDisplayRect(0, 0, 1920, 1080);
+    } catch (e) {}
+  }
+  function avStop() { if (!AV) return; try { AV.stop(); } catch (e) {} try { AV.close(); } catch (e) {} }
+  function avPlay(c, token) {
+    avStop();
+    try {
+      AV.open(c.url);
+      if (c.ua) { try { AV.setStreamingProperty('USER_AGENT', c.ua); } catch (e) {} }
+      try { AV.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX'); } catch (e) {}
+      avRect();
+      AV.setListener({
+        onbufferingstart: function () { if (token === playToken) spin(true); },
+        onbufferingcomplete: function () { if (token === playToken) spin(false); },
+        onerror: function () { fail(token); },
+        onstreamcompleted: function () { if (token === playToken) avPlay(c, token); }
+      });
+      AV.prepareAsync(function () {
+        if (token !== playToken) return;
+        try { AV.play(); } catch (e) { return fail(token); }
+        clearTimeout(failTimer); spin(false); hideMsg();
+      }, function () { fail(token); });
+      failTimer = setTimeout(function () {
+        var st = ''; try { st = AV.getState(); } catch (e) {}
+        if (token === playToken && st !== 'PLAYING') fail(token);
+      }, 25000);
+    } catch (e) { fail(token); }
+  }
+  if (AV) {
+    document.body.className += ' avp';
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) avStop(); else if (current) play(current);
+    });
+  }
+
   function play(c) {
     if (!c) return;
     if (current && current !== c) previous = current;
     current = c; store('last', c.url);
     var token = ++playToken;
     stopHls(); hideMsg(); spin(true); clearTimeout(failTimer);
+    if (AV) {
+      if (mode === 'guide') renderRows(); else showBanner();
+      avPlay(c, token);
+      return;
+    }
     video.removeAttribute('src'); try { video.load(); } catch (e) {}
     if (mode === 'guide') renderRows(); else showBanner();
     if (plutoUrl(c)) { tryHls(token); return; }
@@ -348,7 +402,7 @@
 
   function fail(token) {
     if (token !== playToken) return;
-    clearTimeout(failTimer); spin(false); stopHls();
+    clearTimeout(failTimer); spin(false); stopHls(); avStop();
     showMsg('This channel isn’t available right now', 'Try another channel.');
   }
 
@@ -390,7 +444,8 @@
   // ---------- modes ----------
   function setMode(m) {
     mode = m;
-    document.body.className = m === 'guide' ? 'guide' : '';
+    document.body.className = (m === 'guide' ? 'guide' : '') + (AV ? ' avp' : '');
+    if (AV) avRect();
     $('clock').style.display = m === 'guide' ? 'block' : 'none';
     if (m === 'guide') {
       $('banner').className = '';
