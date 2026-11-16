@@ -125,6 +125,7 @@
   'use strict';
   var PLAYLIST_URL = 'https://seanjudelyons.github.io/tv/tv.m3u';
   var GUIDE_URL = 'https://raw.githubusercontent.com/seanjudelyons/tv-guide/guide/guide.json';
+  var PLUTO_URL = 'https://raw.githubusercontent.com/seanjudelyons/tv-guide/guide/pluto.json';
   var HLS_JS = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
   var WINDOW_MIN = 150;           // minutes of guide shown across the grid
   var GROUP_ORDER = ['All', 'Favourites', 'Australian TV', 'News', 'Movies', 'Kids', 'Entertainment', 'Sports',
@@ -133,7 +134,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var video = $('video');
   var all = [], groups = [], groupIdx = 0, list = [], sel = 0, top = 0;
-  var guide = {}, current = null, previous = null, mode = 'guide';
+  var guide = {}, pluto = {}, current = null, previous = null, mode = 'guide';
   var bannerTimer = null, numTimer = null, numBuf = '', playToken = 0, failTimer = null, hls = null, hlsLoading = null;
 
   // ---------- helpers ----------
@@ -216,7 +217,10 @@
     var gd = fetchText(GUIDE_URL).then(function (t) {
       var j = JSON.parse(t); guide = j.ch || {}; store('gd', t); render();
     }).catch(function () {});
-    return Promise.all([pl, gd]);
+    var pt = fetchText(PLUTO_URL).then(function (t) {
+      pluto = JSON.parse(t).urls || {}; store('pt', t);
+    }).catch(function () {});
+    return Promise.all([pl, gd, pt]);
   }
 
   // ---------- rendering ----------
@@ -318,6 +322,14 @@
   function hideMsg() { $('msg').style.display = 'none'; }
   function spin(on) { $('spin').style.display = on ? 'block' : 'none'; }
 
+  // Pluto links in the playlist go through a redirect (jmp2.uk) the TV can't follow (no CORS, separate audio track).
+  // GitHub resolves them every 6 hours into pluto.json; Pluto channels then play through hls.js.
+  function plutoUrl(c) {
+    var m = /jmp2\.uk\/plu-([0-9a-f]{24})/.exec(c.url);
+    return m ? (pluto[m[1]] || null) : null;
+  }
+  function streamUrl(c) { return plutoUrl(c) || c.url; }
+
   function stopHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 
   function play(c) {
@@ -327,10 +339,11 @@
     var token = ++playToken;
     stopHls(); hideMsg(); spin(true); clearTimeout(failTimer);
     video.removeAttribute('src'); try { video.load(); } catch (e) {}
-    video.src = c.url;
+    if (mode === 'guide') renderRows(); else showBanner();
+    if (plutoUrl(c)) { tryHls(token); return; }
+    video.src = streamUrl(c);
     var pr = video.play(); if (pr && pr.catch) pr.catch(function () {});
     failTimer = setTimeout(function () { if (token === playToken) tryHls(token); }, 12000);
-    if (mode === 'guide') renderRows(); else showBanner();
   }
 
   function fail(token) {
@@ -360,7 +373,7 @@
       hls = new window.Hls({ maxBufferLength: 30, enableWorker: true });
       hls.on(window.Hls.Events.MANIFEST_PARSED, function () { var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); });
       hls.on(window.Hls.Events.ERROR, function (e, d) { if (d && d.fatal) fail(token); });
-      hls.loadSource(current.url); hls.attachMedia(video);
+      hls.loadSource(streamUrl(current)); hls.attachMedia(video);
       failTimer = setTimeout(function () { if (video.readyState < 2) fail(token); }, 15000);
     }).catch(function () { fail(token); });
   }
@@ -466,6 +479,9 @@
     var g = load('group');
     var cachedPl = load('pl'), cachedGd = load('gd');
     if (cachedGd) { try { guide = JSON.parse(cachedGd).ch || {}; } catch (e) {} }
+    var cachedPt = load('pt');
+    if (cachedPt) { try { var pj = JSON.parse(cachedPt); if (now() - pj.generated < 18 * 3600) pluto = pj.urls || {}; } catch (e) {} }
+    loadHlsJs().catch(function () {});
     if (cachedPl) {
       var chs = parsePlaylist(cachedPl);
       if (chs.length) { setChannels(chs); if (g && groups.indexOf(g) >= 0) applyGroup(groups.indexOf(g), false); }
