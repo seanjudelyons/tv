@@ -322,11 +322,11 @@
   function hideMsg() { $('msg').style.display = 'none'; }
   function spin(on) { $('spin').style.display = on ? 'block' : 'none'; }
 
-  // Pluto links in the playlist go through a redirect (jmp2.uk) the TV can't follow (no CORS, separate audio track).
+  // Pluto / Samsung TV Plus links in the playlist go through a redirect (jmp2.uk) the TV can't follow (no CORS, separate audio track).
   // GitHub resolves them every 6 hours into pluto.json; Pluto channels then play through hls.js.
   function plutoUrl(c) {
-    var m = /jmp2\.uk\/plu-([0-9a-f]{24})/.exec(c.url);
-    return m ? (pluto[m[1]] || null) : null;
+    var m = /jmp2\.uk\/(?:plu-([0-9a-f]{24})|(stvp-[A-Za-z0-9]+))/.exec(c.url);
+    return m ? (pluto[m[1] || m[2]] || null) : null;
   }
   function streamUrl(c) { return plutoUrl(c) || c.url; }
 
