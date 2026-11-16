@@ -353,7 +353,7 @@
   function avPlay(c, token) {
     avStop();
     try {
-      AV.open(c.url);
+      AV.open(streamUrl(c));
       if (c.ua) { try { AV.setStreamingProperty('USER_AGENT', c.ua); } catch (e) {} }
       try { AV.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX'); } catch (e) {}
       avRect();
