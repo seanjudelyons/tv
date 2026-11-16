@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>My TV</title>
+<style>
+  :root {
+    --bg: #0a0e15; --panel: #111823; --row: #131b27; --row-alt: #111823;
+    --line: #1e2938; --text: #e8edf5; --muted: #8592a6; --accent: #3d7bff;
+    --accent-soft: #1d3466; --now: #18263a; --red: #ff4d5e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: var(--text);
+    font-family: "SamsungOne", "Samsung Sans", "Roboto", "Helvetica Neue", Arial, sans-serif; cursor: none; }
+  body { background: #000; }
+
+  #video { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: #000; object-fit: contain; z-index: 1;
+    transition: all .25s ease; }
+  body.guide #video { left: 63vw; top: 3.5vh; width: 35vw; height: 19.7vw; border-radius: .6vh; box-shadow: 0 0 0 .2vh var(--line); z-index: 5; }
+
+  #guide { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: var(--bg); z-index: 2; display: none; }
+  body.guide #guide { display: block; }
+
+  /* top-left programme details */
+  #info { position: absolute; left: 2.5vw; top: 3.5vh; width: 58vw; height: 34vh; }
+  #info .ch { display: flex; align-items: center; color: var(--muted); font-size: 2.3vh; }
+  #info .ch img { height: 4.6vh; max-width: 8vw; object-fit: contain; }
+  #info .ch .num { color: var(--text); font-weight: 600; }
+  #info .title { font-size: 4.4vh; font-weight: 700; margin-top: 1.8vh; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #info .when { font-size: 2.2vh; color: var(--muted); margin-top: 1vh; display: flex; align-items: center; }
+  .bar { width: 14vw; height: .55vh; background: #253246; border-radius: 1vh; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  #info .desc { font-size: 2.2vh; line-height: 1.45; color: #c3cbd8; margin-top: 1.6vh; max-height: 9.6vh; overflow: hidden; }
+  #info .next { font-size: 2.1vh; color: var(--muted); margin-top: 1.4vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #info .next b { color: var(--text); font-weight: 600; }
+  #clock { position: absolute; right: 2vw; top: 1vh; font-size: 2vh; color: var(--muted); z-index: 6; display: none; }
+
+  /* category tabs */
+  #tabs { position: absolute; left: 2.5vw; right: 2vw; top: 41vh; display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+  #tabs .t { font-size: 2vh; padding: .8vh 1.2vw; border-radius: 3vh; color: var(--muted); background: var(--panel); }
+  #tabs .t.on { background: var(--accent); color: #fff; font-weight: 600; }
+  #tabs .hint { color: #4d5a6e; font-size: 1.8vh; margin-right: .4vw; }
+
+  /* grid */
+  #grid { position: absolute; left: 2.5vw; right: 2vw; top: 47.5vh; bottom: 2.5vh; }
+  #times { position: relative; height: 4vh; margin-left: 21vw; border-bottom: .15vh solid var(--line); }
+  #times span { position: absolute; top: .6vh; font-size: 1.9vh; color: var(--muted); transform: translateX(.4vw); }
+  #rows { position: absolute; left: 0; right: 0; top: 4.6vh; bottom: 0; overflow: hidden; }
+  .r { position: absolute; left: 0; right: 0; height: 6.6vh; display: flex; }
+  .r .c { width: 20.6vw; margin-right: .4vw; height: 6.1vh; background: var(--row); border-radius: .5vh; display: flex; align-items: center;
+    padding: 0 .9vw; overflow: hidden; }
+  .r .c .n { width: 2.6vw; font-size: 2vh; color: var(--muted); text-align: right; flex: none; }
+  .r .c img { width: 4.2vw; height: 4.2vh; object-fit: contain; flex: none; }
+  .r .c .nm { font-size: 2.15vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .r .c .live { width: .9vh; height: .9vh; border-radius: 50%; background: var(--red); flex: none; margin-left: auto; }
+  .r .tl { position: relative; flex: 1; height: 6.1vh; }
+  .p { position: absolute; top: 0; height: 6.1vh; background: var(--row); border-radius: .5vh; padding: 0 .8vw;
+    display: flex; align-items: center; font-size: 2vh; color: #c9d1dd; white-space: nowrap; overflow: hidden; border-right: .25vw solid var(--bg); }
+  .p.now { background: var(--now); color: var(--text); }
+  .p.none { color: #536074; font-style: italic; }
+  .r.sel .c { background: var(--accent); }
+  .r.sel .c .n { color: #dfe8ff; }
+  .r.sel .p.now { background: var(--accent-soft); color: #fff; }
+  #nowline { position: absolute; top: 0; bottom: 0; width: .18vw; background: var(--red); z-index: 3; }
+  #nowline:before { content: ""; position: absolute; top: 0; left: -.45vw; border: .5vw solid transparent; border-top-color: var(--red); border-bottom: 0; }
+
+  /* watch-mode banner */
+  #banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; padding: 6vh 3vw 4vh;
+    background: linear-gradient(to top, rgba(5,8,13,.96) 55%, rgba(5,8,13,0)); display: none; }
+  #banner.on { display: flex; align-items: flex-end; }
+  #banner .logo { width: 10vw; height: 10vh; object-fit: contain; }
+  #banner .meta { flex: 1; min-width: 0; }
+  #banner .ch { font-size: 2.4vh; color: var(--muted); }
+  #banner .ch b { color: var(--text); margin-right: .8vw; }
+  #banner .title { font-size: 4.2vh; font-weight: 700; margin-top: .6vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #banner .when { font-size: 2.1vh; color: var(--muted); margin-top: .8vh; display: flex; align-items: center; }
+  #banner .next { font-size: 2.1vh; color: var(--muted); margin-top: .8vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #banner .next b { color: var(--text); font-weight: 600; }
+  #banner .hint { font-size: 1.8vh; color: #5d6a7e; align-self: flex-end; white-space: nowrap; }
+
+  #numbox { position: fixed; right: 3vw; top: 4vh; z-index: 9; font-size: 8vh; font-weight: 700; color: #fff;
+    background: rgba(10,14,21,.85); padding: 1vh 2vw; border-radius: 1vh; display: none; }
+  #msg { position: fixed; z-index: 8; left: 50%; top: 50%; transform: translate(-50%,-50%); text-align: center; display: none;
+    background: rgba(10,14,21,.9); padding: 3vh 3vw; border-radius: 1vh; font-size: 2.6vh; max-width: 60vw; }
+  #msg small { display: block; color: var(--muted); font-size: 2vh; margin-top: 1vh; }
+  body.guide #msg { left: 80.5vw; top: 13.3vw; font-size: 2vh; padding: 2vh 2vw; max-width: 33vw; }
+  #spin { position: fixed; z-index: 7; left: 50%; top: 50%; width: 7vh; height: 7vh; margin: -3.5vh 0 0 -3.5vh; border-radius: 50%;
+    border: .6vh solid rgba(255,255,255,.15); border-top-color: #fff; animation: sp 0.9s linear infinite; display: none; }
+  body.guide #spin { left: 80.5vw; top: 13.3vw; width: 5vh; height: 5vh; margin: -2.5vh 0 0 -2.5vh; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  #boot { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 20; background: var(--bg); display: flex; align-items: center; justify-content: center;
+    font-size: 3vh; color: var(--muted); }
+  /* flex gap fallback for older TV browsers */
+  #info .ch > * + * { margin-left: 1.2vw; }
+  #info .when > * + * { margin-left: 1vw; }
+  /* category tabs */
+  #tabs > * + * { margin-left: .8vw; }
+  .r .c > * + * { margin-left: .9vw; }
+  #banner.on > * + * { margin-left: 2vw; }
+  #banner .when > * + * { margin-left: 1vw; }
+</style>
+</head>
+<body class="guide">
+<video id="video" autoplay playsinline></video>
+
+<div id="guide">
+  <div id="info"></div>
+  <div id="tabs"></div>
+  <div id="grid">
+    <div id="times"></div>
+    <div id="rows"></div>
+  </div>
+</div>
+<div id="clock"></div>
+<div id="banner"></div>
+<div id="numbox"></div>
+<div id="msg"></div>
+<div id="spin"></div>
+<div id="boot">Loading channels…</div>
+
+<script>
+(function () {
+  'use strict';
+  var PLAYLIST_URL = 'https://seanjudelyons.github.io/tv/tv.m3u';
+  var GUIDE_URL = 'https://raw.githubusercontent.com/seanjudelyons/tv-guide/guide/guide.json';
+  var HLS_JS = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
+  var WINDOW_MIN = 150;           // minutes of guide shown across the grid
+  var GROUP_ORDER = ['All', 'Favourites', 'Australian TV', 'News', 'Movies', 'Kids', 'Entertainment', 'Sports',
+                     'Crime & Reality', 'Lifestyle & Docs', 'Music'];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $('video');
+  var all = [], groups = [], groupIdx = 0, list = [], sel = 0, top = 0;
+  var guide = {}, current = null, previous = null, mode = 'guide';
+  var bannerTimer = null, numTimer = null, numBuf = '', playToken = 0, failTimer = null, hls = null, hlsLoading = null;
+
+  // ---------- helpers ----------
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function now() { return Date.now() / 1000; }
+  function hm(t) {
+    var d = new Date(t * 1000), h = d.getHours(), m = d.getMinutes();
+    var ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12;
+    return h + ':' + (m < 10 ? '0' : '') + m + ap;
+  }
+  function progs(ch) { return (ch && ch.id && guide[ch.id]) || []; }
+  function nowNext(ch) {
+    var p = progs(ch), t = now();
+    for (var i = 0; i < p.length; i++) {
+      if (p[i][0] <= t && t < p[i][1]) return [p[i], p[i + 1] || null];
+      if (p[i][0] > t) return [null, p[i]];
+    }
+    return [null, null];
+  }
+  function pct(p) { return Math.max(0, Math.min(100, (now() - p[0]) / (p[1] - p[0]) * 100)); }
+
+  // ---------- data ----------
+  function parsePlaylist(text) {
+    var out = [], lines = text.split(/\r?\n/), cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (l.indexOf('#EXTINF') === 0) {
+        cur = { attrs: {} };
+        var re = /([\w-]+)="([^"]*)"/g, m;
+        while ((m = re.exec(l))) cur.attrs[m[1]] = m[2];
+        var q = l.lastIndexOf('",');
+        cur.name = (q >= 0 ? l.slice(q + 2) : l.split(',').pop()).trim();
+      } else if (cur && l && l[0] !== '#') {
+        var a = cur.attrs;
+        var gs = (a['group-title'] || 'Other').split(';').map(function (g) {
+          g = g.trim(); return g === 'Stremio Favourites' ? 'Favourites' : g; });
+        out.push({ name: cur.name || a['tvg-name'] || 'Channel', id: a['tvg-id'] || '', logo: a['tvg-logo'] || '',
+                   num: parseInt(a['tvg-chno'], 10) || (out.length + 1), groups: gs, url: l });
+        cur = null;
+      }
+    }
+    return out;
+  }
+
+  function setChannels(chs) {
+    all = chs;
+    var seen = {};
+    all.forEach(function (c) { c.groups.forEach(function (g) { seen[g] = 1; }); });
+    groups = GROUP_ORDER.filter(function (g) { return g === 'All' || seen[g]; });
+    Object.keys(seen).forEach(function (g) { if (groups.indexOf(g) < 0) groups.push(g); });
+    applyGroup(Math.min(groupIdx, groups.length - 1), true);
+  }
+
+  function applyGroup(i, keepSel) {
+    var keepCh = list[sel];
+    groupIdx = (i + groups.length) % groups.length;
+    var g = groups[groupIdx];
+    list = g === 'All' ? all.slice() : all.filter(function (c) { return c.groups.indexOf(g) >= 0; });
+    var at = -1;
+    if (keepSel && keepCh) at = list.indexOf(keepCh);
+    if (at < 0 && current) at = list.indexOf(current);
+    sel = Math.max(0, at); top = 0;
+    store('group', g);
+    render();
+  }
+
+  function fetchText(url) {
+    return fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Math.floor(Date.now() / 600000), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); });
+  }
+
+  function loadData(first) {
+    var pl = fetchText(PLAYLIST_URL).then(function (t) {
+      var chs = parsePlaylist(t);
+      if (chs.length) { store('pl', t); setChannels(chs); }
+    }).catch(function () { if (!all.length) showMsg('Couldn’t load the channel list', 'Check the TV’s internet connection, then press the green button to retry.'); });
+    var gd = fetchText(GUIDE_URL).then(function (t) {
+      var j = JSON.parse(t); guide = j.ch || {}; store('gd', t); render();
+    }).catch(function () {});
+    return Promise.all([pl, gd]);
+  }
+
+  // ---------- rendering ----------
+  function rowsVisible() { var h = $('rows').clientHeight, rh = window.innerHeight * 0.066; return Math.max(3, Math.floor(h / rh)); }
+  function winStart() { var t = now(); return Math.floor(t / 1800) * 1800; }
+
+  function render() {
+    if (mode !== 'guide') return;
+    renderTabs(); renderTimes(); renderRows(); renderInfo();
+  }
+
+  function renderTabs() {
+    var h = '<span class="hint">◀ ▶</span>';
+    groups.forEach(function (g, i) { h += '<span class="t' + (i === groupIdx ? ' on' : '') + '">' + esc(g) + '</span>'; });
+    $('tabs').innerHTML = h;
+    var on = $('tabs').querySelector('.on');
+    if (on) { var tabs = $('tabs'); tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.clientWidth / 2); }
+  }
+
+  function renderTimes() {
+    var ws = winStart(), h = '', w = $('times').clientWidth;
+    for (var m = 0; m < WINDOW_MIN; m += 30) h += '<span style="left:' + (m / WINDOW_MIN * w) + 'px">' + hm(ws + m * 60) + '</span>';
+    $('times').innerHTML = h;
+  }
+
+  function renderRows() {
+    var vis = rowsVisible();
+    if (sel < top) top = sel;
+    if (sel >= top + vis) top = sel - vis + 1;
+    top = Math.max(0, Math.min(top, Math.max(0, list.length - vis)));
+    var ws = winStart(), we = ws + WINDOW_MIN * 60, t = now();
+    var rowsEl = $('rows'), tlw = rowsEl.clientWidth - window.innerWidth * 0.21;
+    var rh = window.innerHeight * 0.066, h = '';
+    for (var i = top; i < Math.min(list.length, top + vis); i++) {
+      var c = list[i];
+      h += '<div class="r' + (i === sel ? ' sel' : '') + '" style="top:' + ((i - top) * rh) + 'px">';
+      h += '<div class="c"><span class="n">' + c.num + '</span>' +
+           (c.logo ? '<img src="' + esc(c.logo) + '" onerror="this.style.visibility=\'hidden\'">' : '<img style="visibility:hidden">') +
+           '<span class="nm">' + esc(c.name) + '</span>' + (c === current ? '<span class="live"></span>' : '') + '</div>';
+      h += '<div class="tl">';
+      var p = progs(c), any = false;
+      for (var k = 0; k < p.length; k++) {
+        var a = Math.max(p[k][0], ws), b = Math.min(p[k][1], we);
+        if (b <= a) continue;
+        any = true;
+        var left = (a - ws) / (we - ws) * tlw, width = (b - a) / (we - ws) * tlw;
+        var isNow = p[k][0] <= t && t < p[k][1];
+        h += '<div class="p' + (isNow ? ' now' : '') + '" style="left:' + left + 'px;width:' + width + 'px">' + esc(p[k][2]) + '</div>';
+      }
+      if (!any) h += '<div class="p none" style="left:0;width:' + tlw + 'px">' + esc(c.name) + '</div>';
+      h += '</div></div>';
+    }
+    var nl = (t - ws) / (we - ws) * tlw + window.innerWidth * 0.21;
+    h += '<div id="nowline" style="left:' + nl + 'px"></div>';
+    rowsEl.innerHTML = h;
+    $('times').insertAdjacentHTML('beforeend', '');
+  }
+
+  function renderInfo() {
+    var c = list[sel];
+    if (!c) { $('info').innerHTML = ''; return; }
+    var nn = nowNext(c), p = nn[0], n = nn[1], h = '';
+    h += '<div class="ch">' + (c.logo ? '<img src="' + esc(c.logo) + '" onerror="this.remove()">' : '') +
+         '<span class="num">' + c.num + '</span><span>' + esc(c.name) + '</span></div>';
+    if (p) {
+      h += '<div class="title">' + esc(p[2]) + '</div>';
+      h += '<div class="when"><span>' + hm(p[0]) + ' – ' + hm(p[1]) + '</span><span class="bar"><i style="width:' + pct(p) + '%"></i></span>' +
+           '<span>' + Math.max(0, Math.round((p[1] - now()) / 60)) + ' min left</span></div>';
+      if (p[3]) h += '<div class="desc">' + esc(p[3]) + '</div>';
+    } else {
+      h += '<div class="title">' + esc(c.name) + '</div><div class="when">No guide information for this channel</div>';
+    }
+    if (n) h += '<div class="next">Next · ' + hm(n[0]) + ' &nbsp;<b>' + esc(n[2]) + '</b></div>';
+    h += '<div class="next" style="margin-top:2.2vh;color:#4d5a6e">OK: watch · OK again: full screen · ◀ ▶ categories · CH +/– page</div>';
+    $('info').innerHTML = h;
+  }
+
+  function showBanner() {
+    var c = current; if (!c) return;
+    var nn = nowNext(c), p = nn[0], n = nn[1], h = '';
+    h += c.logo ? '<img class="logo" src="' + esc(c.logo) + '" onerror="this.style.visibility=\'hidden\'">' : '';
+    h += '<div class="meta"><div class="ch"><b>' + c.num + '</b>' + esc(c.name) + '</div>';
+    if (p) {
+      h += '<div class="title">' + esc(p[2]) + '</div><div class="when"><span>' + hm(p[0]) + ' – ' + hm(p[1]) +
+           '</span><span class="bar"><i style="width:' + pct(p) + '%"></i></span></div>';
+    } else h += '<div class="title">' + esc(c.name) + '</div>';
+    if (n) h += '<div class="next">Next · ' + hm(n[0]) + ' &nbsp;<b>' + esc(n[2]) + '</b></div>';
+    h += '</div><div class="hint">OK: guide · ▲▼ change channel</div>';
+    var b = $('banner'); b.innerHTML = h; b.className = 'on';
+    clearTimeout(bannerTimer); bannerTimer = setTimeout(function () { b.className = ''; }, 5000);
+  }
+
+  function tickClock() {
+    var d = new Date(); $('clock').textContent = hm(d.getTime() / 1000);
+  }
+
+  // ---------- playback ----------
+  function showMsg(a, b) { var m = $('msg'); m.innerHTML = esc(a) + (b ? '<small>' + esc(b) + '</small>' : ''); m.style.display = 'block'; }
+  function hideMsg() { $('msg').style.display = 'none'; }
+  function spin(on) { $('spin').style.display = on ? 'block' : 'none'; }
+
+  function stopHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
+
+  function play(c) {
+    if (!c) return;
+    if (current && current !== c) previous = current;
+    current = c; store('last', c.url);
+    var token = ++playToken;
+    stopHls(); hideMsg(); spin(true); clearTimeout(failTimer);
+    video.removeAttribute('src'); try { video.load(); } catch (e) {}
+    video.src = c.url;
+    var pr = video.play(); if (pr && pr.catch) pr.catch(function () {});
+    failTimer = setTimeout(function () { if (token === playToken) tryHls(token); }, 12000);
+    if (mode === 'guide') renderRows(); else showBanner();
+  }
+
+  function fail(token) {
+    if (token !== playToken) return;
+    clearTimeout(failTimer); spin(false); stopHls();
+    showMsg('This channel isn’t available right now', 'Try another channel.');
+  }
+
+  function loadHlsJs() {
+    if (window.Hls) return Promise.resolve();
+    if (hlsLoading) return hlsLoading;
+    hlsLoading = new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = HLS_JS; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+    return hlsLoading;
+  }
+
+  function tryHls(token) {
+    if (token !== playToken || !current) return;
+    if (current._hlsTried === token) return fail(token);
+    current._hlsTried = token;
+    clearTimeout(failTimer);
+    loadHlsJs().then(function () {
+      if (token !== playToken) return;
+      if (!window.Hls || !window.Hls.isSupported()) return fail(token);
+      video.removeAttribute('src'); try { video.load(); } catch (e) {}
+      hls = new window.Hls({ maxBufferLength: 30, enableWorker: true });
+      hls.on(window.Hls.Events.MANIFEST_PARSED, function () { var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); });
+      hls.on(window.Hls.Events.ERROR, function (e, d) { if (d && d.fatal) fail(token); });
+      hls.loadSource(current.url); hls.attachMedia(video);
+      failTimer = setTimeout(function () { if (video.readyState < 2) fail(token); }, 15000);
+    }).catch(function () { fail(token); });
+  }
+
+  video.addEventListener('playing', function () { clearTimeout(failTimer); spin(false); hideMsg(); });
+  video.addEventListener('waiting', function () { spin(true); });
+  var lastT = -1;
+  video.addEventListener('timeupdate', function () {
+    if (video.currentTime !== lastT && !video.paused) { spin(false); clearTimeout(failTimer); }
+    lastT = video.currentTime;
+  });
+  video.addEventListener('error', function () { var t = playToken; if (!hls) tryHls(t); });
+
+  // ---------- modes ----------
+  function setMode(m) {
+    mode = m;
+    document.body.className = m === 'guide' ? 'guide' : '';
+    $('clock').style.display = m === 'guide' ? 'block' : 'none';
+    if (m === 'guide') {
+      $('banner').className = '';
+      if (current) { var at = list.indexOf(current); if (at >= 0) sel = at; }
+      render();
+    } else showBanner();
+  }
+
+  function zap(d) {
+    if (!list.length) return;
+    var at = list.indexOf(current); if (at < 0) at = sel;
+    at = (at + d + list.length) % list.length; sel = at;
+    play(list[at]);
+  }
+
+  function move(d) {
+    if (!list.length) return;
+    sel = Math.max(0, Math.min(list.length - 1, sel + d));
+    renderRows(); renderInfo();
+  }
+
+  function digit(n) {
+    numBuf = (numBuf + n).slice(-4);
+    var nb = $('numbox'); nb.textContent = numBuf; nb.style.display = 'block';
+    clearTimeout(numTimer);
+    numTimer = setTimeout(function () {
+      var want = parseInt(numBuf, 10); numBuf = ''; nb.style.display = 'none';
+      var c = null;
+      for (var i = 0; i < all.length; i++) if (all[i].num === want) { c = all[i]; break; }
+      if (!c) return;
+      if (list.indexOf(c) < 0) applyGroup(0, false);
+      sel = list.indexOf(c); play(c);
+      if (mode === 'guide') render();
+    }, 1500);
+  }
+
+  // ---------- remote ----------
+  var K = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13, BACK: 10009, ESC: 27, BACKSPACE: 8, CHUP: 427, CHDOWN: 428,
+            PGUP: 33, PGDN: 34, INFO: 457, CHLIST: 10073, GUIDE: 458, PRECH: 10190, RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406 };
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode;
+    if (k >= 48 && k <= 57) { digit(k - 48); e.preventDefault(); return; }
+    if (k >= 96 && k <= 105) { digit(k - 96); e.preventDefault(); return; }
+    var handled = true;
+    if (mode === 'guide') {
+      if (k === K.UP) move(-1);
+      else if (k === K.DOWN) move(1);
+      else if (k === K.CHUP || k === K.PGUP) move(-rowsVisible());
+      else if (k === K.CHDOWN || k === K.PGDN) move(rowsVisible());
+      else if (k === K.LEFT) applyGroup(groupIdx - 1, true);
+      else if (k === K.RIGHT) applyGroup(groupIdx + 1, true);
+      else if (k === K.ENTER) { var c = list[sel]; if (c && c === current) setMode('watch'); else play(c); }
+      else if (k === K.BACK || k === K.ESC || k === K.BACKSPACE) { if (current) setMode('watch'); }
+      else if (k === K.GREEN) loadData(false);
+      else if (k === K.PRECH && previous) play(previous);
+      else handled = false;
+    } else {
+      if (k === K.UP || k === K.CHUP) zap(1);
+      else if (k === K.DOWN || k === K.CHDOWN) zap(-1);
+      else if (k === K.ENTER || k === K.LEFT || k === K.RIGHT || k === K.BACK || k === K.ESC || k === K.BACKSPACE ||
+               k === K.CHLIST || k === K.GUIDE) setMode('guide');
+      else if (k === K.INFO) showBanner();
+      else if (k === K.PRECH && previous) play(previous);
+      else if (k === K.GREEN) loadData(false);
+      else handled = false;
+    }
+    if (handled) e.preventDefault();
+  });
+
+  function registerKeys() {
+    try {
+      var names = ['ChannelUp', 'ChannelDown', 'PreviousChannel', 'ChannelList', 'Info', 'Guide', 'ColorF0Red', 'ColorF1Green',
+                   'ColorF2Yellow', 'ColorF3Blue', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+      if (window.tizen && tizen.tvinputdevice) {
+        if (tizen.tvinputdevice.registerKeyBatch) tizen.tvinputdevice.registerKeyBatch(names);
+        else names.forEach(function (n) { try { tizen.tvinputdevice.registerKey(n); } catch (e) {} });
+      }
+    } catch (e) {}
+  }
+
+  // ---------- start ----------
+  function start() {
+    registerKeys();
+    tickClock(); setInterval(tickClock, 15000);
+    var g = load('group');
+    var cachedPl = load('pl'), cachedGd = load('gd');
+    if (cachedGd) { try { guide = JSON.parse(cachedGd).ch || {}; } catch (e) {} }
+    if (cachedPl) {
+      var chs = parsePlaylist(cachedPl);
+      if (chs.length) { setChannels(chs); if (g && groups.indexOf(g) >= 0) applyGroup(groups.indexOf(g), false); }
+    }
+    var begin = function () {
+      $('boot').style.display = 'none';
+      if (!current && all.length) {
+        var last = load('last'), c = null;
+        for (var i = 0; i < all.length; i++) if (all[i].url === last) { c = all[i]; break; }
+        c = c || all[0];
+        var at = list.indexOf(c); if (at >= 0) sel = at;
+        play(c); setMode('watch');
+      }
+    };
+    if (all.length) { begin(); loadData(false); }
+    else loadData(true).then(function () {
+      if (g && groups.indexOf(g) >= 0) applyGroup(groups.indexOf(g), false);
+      begin();
+    });
+    setInterval(function () { if (mode === 'guide') render(); }, 60000);
+    setInterval(function () { loadData(false); }, 30 * 60000);
+    window.addEventListener('resize', render);
+  }
+  start();
+})();
+</script>
+</body>
+</html>
