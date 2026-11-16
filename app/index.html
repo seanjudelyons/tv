@@ -18,6 +18,12 @@
   #av { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 1; display: none; }
   body.guide #av { left: 63vw; top: 3.5vh; width: 35vw; height: 19.7vw; z-index: 5; }
   body.avp #av { display: block; }
+  /* Samsung AVPlay draws video BEHIND the web page, so in the guide the page must be see-through where the
+     preview is: the guide's background becomes transparent and #hole paints it back everywhere else. */
+  #hole { display: none; position: absolute; left: 63vw; top: 3.5vh; width: 35vw; height: 19.7vw; border-radius: .6vh;
+    box-shadow: 0 0 0 300vmax var(--bg); pointer-events: none; }
+  body.avp #guide { background: transparent; }
+  body.avp #hole { display: block; }
   body.avp #video { display: none; }
   #video { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: #000; object-fit: contain; z-index: 1;
     transition: all .25s ease; }
@@ -111,6 +117,7 @@
 <object id="av" type="application/avplayer"></object>
 
 <div id="guide">
+  <div id="hole"></div>
   <div id="info"></div>
   <div id="tabs"></div>
   <div id="grid">
