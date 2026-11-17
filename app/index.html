@@ -138,6 +138,10 @@
   var PLAYLIST_URL = 'https://seanjudelyons.github.io/tv/tv.m3u';
   var GUIDE_URL = 'https://raw.githubusercontent.com/seanjudelyons/tv-guide/guide/guide.json';
   var PLUTO_URL = 'https://raw.githubusercontent.com/seanjudelyons/tv-guide/guide/pluto.json';
+  // About 45 Australian streaming channels (7plus: Judge Judy, NCIS, Bondi Rescue...) only ever publish what is on
+  // now and the next two programmes, so the guide file above is out of date for them within an hour or two.
+  // This small file is where that information comes from; the app reads it directly, every 10 minutes.
+  var LIVE_URL = 'https://i.mjh.nz/au/Sydney/tv.json';
   var HLS_JS = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
   var WINDOW_MIN = 150;           // minutes of guide shown across the grid
   var GROUP_ORDER = ['All', 'Favourites', 'Australian TV', 'News', 'Movies', 'Kids', 'Entertainment', 'Sports',
@@ -146,7 +150,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var video = $('video');
   var all = [], groups = [], groupIdx = 0, list = [], sel = 0, top = 0;
-  var guide = {}, pluto = {}, current = null, previous = null, mode = 'guide';
+  var guide = {}, live = {}, pluto = {}, current = null, previous = null, mode = 'guide';
   var bannerTimer = null, numTimer = null, numBuf = '', playToken = 0, failTimer = null, hls = null, hlsLoading = null;
   // hls.js recovery (the TV's Wi-Fi drops out for seconds at a time; see tryHls)
   var HLS_START_MS = 15000;     // no picture and no data for this long -> rebuild the player
@@ -166,7 +170,14 @@
     var ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12;
     return h + ':' + (m < 10 ? '0' : '') + m + ap;
   }
-  function progs(ch) { return (ch && ch.id && guide[ch.id]) || []; }
+  function progs(ch) {
+    var id = ch && ch.id, g = (id && guide[id]) || [], l = (id && live[id]) || [];
+    // The guide wins wherever it reaches at least as far as the live file (true for every channel with a full guide).
+    if (!l.length || (g.length && g[g.length - 1][1] > l[l.length - 1][0])) return g;
+    var out = g.slice(), end = g.length ? g[g.length - 1][1] : 0;
+    for (var i = 0; i < l.length; i++) if (l[i][0] >= end - 60) out.push(l[i]);
+    return out;
+  }
   function nowNext(ch) {
     var p = progs(ch), t = now();
     for (var i = 0; i < p.length; i++) {
@@ -242,6 +253,31 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); });
   }
 
+  // tv.json: {channel: {epg_id, programs: [[start, title], ...]}} -> {id: [[start, stop, title, '']]}
+  function parseLive(text) {
+    var j = JSON.parse(text), out = {};
+    for (var k in j) {
+      var c = j[k], p = c && c.programs;
+      if (!p || !p.length) continue;
+      var rows = [], total = 0, n = 0;
+      for (var i = 0; i < p.length; i++) {
+        var stop = i + 1 < p.length ? p[i + 1][0] : 0;
+        if (stop > p[i][0]) { total += stop - p[i][0]; n++; }
+        rows.push([p[i][0], stop, String(p[i][1] || ''), '']);
+      }
+      // The last programme has no end time: assume it runs as long as the ones before it (15 minutes to 3 hours).
+      var last = rows[rows.length - 1];
+      last[1] = last[0] + Math.max(900, Math.min(10800, n ? total / n : 3600));
+      out[c.epg_id || k] = rows;
+    }
+    return out;
+  }
+  function loadLive() {
+    return fetchText(LIVE_URL).then(function (t) {
+      live = parseLive(t); store('lv', JSON.stringify(live)); render();
+    }).catch(function () {});
+  }
+
   function loadData(first) {
     var pl = fetchText(PLAYLIST_URL).then(function (t) {
       var chs = parsePlaylist(t);
@@ -253,6 +289,7 @@
     var pt = fetchText(PLUTO_URL).then(function (t) {
       pluto = JSON.parse(t).urls || {}; store('pt', t);
     }).catch(function () {});
+    loadLive();   // not waited for: it only fills in programme names
     return Promise.all([pl, gd, pt]);
   }
 
@@ -624,6 +661,7 @@
     var g = load('group');
     var cachedPl = load('pl'), cachedGd = load('gd');
     if (cachedGd) { try { guide = JSON.parse(cachedGd).ch || {}; } catch (e) {} }
+    try { live = JSON.parse(load('lv')) || {}; } catch (e) { live = {}; }
     var cachedPt = load('pt');
     if (cachedPt) { try { var pj = JSON.parse(cachedPt); if (now() - pj.generated < 18 * 3600) pluto = pj.urls || {}; } catch (e) {} }
     loadHlsJs().catch(function () {});
@@ -648,6 +686,7 @@
     });
     setInterval(function () { if (mode === 'guide') render(); }, 60000);
     setInterval(function () { loadData(false); }, 30 * 60000);
+    setInterval(loadLive, 10 * 60000);
     // A picture that froze without hls.js reporting an error: treat it like any other failure.
     setInterval(function () {
       var t = Date.now();
