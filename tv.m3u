@@ -40,11 +40,11 @@ https://cbsn-us-vtt.cbsnstream.cbsnews.com/out/v1/ef868690d34144509eda696884bf16
 https://jmp2.uk/stvp-USBB11000015Q
 #EXTINF:-1 tvg-id="5d14fb6c84dd37df3b4290c5" tvg-name="Peppa Pig" tvg-chno="17" tvg-logo="https://images.pluto.tv/channels/5d14fb6c84dd37df3b4290c5/colorLogoPNG_1730733871298.png" group-title="Stremio Favourites;Kids",Peppa Pig
 https://jmp2.uk/plu-5d14fb6c84dd37df3b4290c5.m3u8
-#EXTINF:-1 tvg-id="mjh-bloomberg-tv" tvg-name="Bloomberg TV" tvg-chno="18" tvg-logo="https://i.mjh.nz/.images/bloomberg-tv.png" group-title="Stremio Favourites;News",Bloomberg TV
+#EXTINF:-1 tvg-id="BloombergTelevision.au" tvg-name="Bloomberg TV" tvg-chno="18" tvg-logo="https://i.mjh.nz/.images/bloomberg-tv.png" group-title="Stremio Favourites;News",Bloomberg TV
 https://bloomberg.com/media-manifest/streams/aus.m3u8
 #EXTINF:-1 tvg-id="GB1700005U8" tvg-name="Baby Shark TV" tvg-chno="19" tvg-logo="https://i.imgur.com/SbBKr8L.png" group-title="Stremio Favourites;Kids",Baby Shark TV
 https://newidco-babysharktv-1-eu.rakuten.wurl.tv/playlist.m3u8
-#EXTINF:-1 tvg-id="mjh-bbc-news-fast" tvg-name="BBC News" tvg-chno="20" tvg-logo="https://imageresizer.static9.net.au/85c0UKHMSSRPXJ2MJ2PXqvUcXok=/768x0/https%3A%2F%2Fvms-tv-images-prod.s3-ap-southeast-2.amazonaws.com%2F2026%2F03%2F763537%2Fbbc_squircle.png" group-title="Stremio Favourites;News",BBC News
+#EXTINF:-1 tvg-id="BBCNews.au" tvg-name="BBC News" tvg-chno="20" tvg-logo="https://imageresizer.static9.net.au/85c0UKHMSSRPXJ2MJ2PXqvUcXok=/768x0/https%3A%2F%2Fvms-tv-images-prod.s3-ap-southeast-2.amazonaws.com%2F2026%2F03%2F763537%2Fbbc_squircle.png" group-title="Stremio Favourites;News",BBC News
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/bbc-news-fast.m3u8
 #EXTINF:-1 tvg-id="GBBA3300059BU" tvg-name="MyTime Movie Network" tvg-chno="21" tvg-logo="https://i.imgur.com/HYgxPVQ.png" group-title="Stremio Favourites;Movies",MyTime Movie Network
@@ -445,10 +445,10 @@ https://i.mjh.nz/.r/sbs-4syd.m3u8
 #EXTINF:-1 tvg-id="mjh-sbs-sb04" tvg-name="Koori Knockout" tvg-chno="155" tvg-logo="https://image.pr.sbsod.com/241574b9-51a2-55a5-bef8-a555021dd833" group-title="Entertainment",Koori Knockout
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sbs-sb04.m3u8
-#EXTINF:-1 tvg-id="mjh-sbs-france24" tvg-name="France 24" tvg-chno="156" tvg-logo="https://image.pr.sbsod.com/940bda61-531e-5e30-bb1e-69db1cdbb077" group-title="News",France 24
+#EXTINF:-1 tvg-id="FRANCE24.au" tvg-name="France 24" tvg-chno="156" tvg-logo="https://image.pr.sbsod.com/940bda61-531e-5e30-bb1e-69db1cdbb077" group-title="News",France 24
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sbs-france24.m3u8
-#EXTINF:-1 tvg-id="mjh-sbs-euronews" tvg-name="euronews" tvg-chno="157" tvg-logo="https://image.pr.sbsod.com/60e599d9-82ed-5eac-b51c-7c23a9bb0c55" group-title="News",euronews
+#EXTINF:-1 tvg-id="Euronews.au" tvg-name="euronews" tvg-chno="157" tvg-logo="https://image.pr.sbsod.com/60e599d9-82ed-5eac-b51c-7c23a9bb0c55" group-title="News",euronews
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sbs-euronews.m3u8
 #EXTINF:-1 tvg-id="mjh-sbs-sb02" tvg-name="Insight" tvg-chno="158" tvg-logo="https://image.pr.sbsod.com/ac68f57a-4655-5dc2-b17e-2ca3505e5e6c" group-title="Entertainment",Insight
@@ -466,10 +466,10 @@ https://i.mjh.nz/.r/sbs-sb01.m3u8
 #EXTINF:-1 tvg-id="mjh-abc-tv-plus" tvg-name="ABC Family" tvg-chno="162" tvg-logo="https://cdn.iview.abc.net.au/thumbs/256/7_Family_C-1053_iview_LivestreamOff_2000x2000_new.png" group-title="Australian TV",ABC Family
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://c.mjh.nz/abc-tv-plus.m3u8
-#EXTINF:-1 tvg-id="mjh-sky-racing-1" tvg-name="Sky Racing #1" tvg-chno="163" tvg-logo="https://i.mjh.nz/.images/sky-racing-1.png" group-title="Sports",Sky Racing #1
+#EXTINF:-1 tvg-id="SkyRacing1.au" tvg-name="Sky Racing #1" tvg-chno="163" tvg-logo="https://i.mjh.nz/.images/sky-racing-1.png" group-title="Sports",Sky Racing #1
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sky-racing-1.m3u8
-#EXTINF:-1 tvg-id="mjh-sky-racing-2" tvg-name="Sky Racing #2" tvg-chno="164" tvg-logo="https://i.mjh.nz/.images/sky-racing-2.png" group-title="Sports",Sky Racing #2
+#EXTINF:-1 tvg-id="SkyRacing2.au" tvg-name="Sky Racing #2" tvg-chno="164" tvg-logo="https://i.mjh.nz/.images/sky-racing-2.png" group-title="Sports",Sky Racing #2
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sky-racing-2.m3u8
 #EXTINF:-1 tvg-id="mjh-sky-racing-thoroughbred" tvg-name="Sky Racing - Thoroughbred Central" tvg-chno="165" tvg-logo="https://i.mjh.nz/.images/sky-racing-thoroughbred.png" group-title="Sports",Sky Racing - Thoroughbred Central
@@ -478,7 +478,7 @@ https://i.mjh.nz/.r/sky-racing-thoroughbred.m3u8
 #EXTINF:-1 tvg-id="mjh-sky-news-now" tvg-name="Sky News Now" tvg-chno="166" tvg-logo="https://i.mjh.nz/.images/sky-news-now.png" group-title="News",Sky News Now
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/sky-news-now.m3u8
-#EXTINF:-1 tvg-id="mjh-good-dot" tvg-name="GOOD." tvg-chno="167" tvg-logo="https://i.mjh.nz/.images/good-dot.png" group-title="Entertainment",GOOD.
+#EXTINF:-1 tvg-id="GOOD.au" tvg-name="GOOD." tvg-chno="167" tvg-logo="https://i.mjh.nz/.images/good-dot.png" group-title="Entertainment",GOOD.
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://c.mjh.nz/good-dot.m3u8
 #EXTINF:-1 tvg-id="mjh-redbull-tv" tvg-name="Redbull TV" tvg-chno="168" tvg-logo="https://i.mjh.nz/.images/redbull-tv.png" group-title="Sports",Redbull TV
@@ -487,7 +487,7 @@ https://i.mjh.nz/.r/redbull-tv.m3u8
 #EXTINF:-1 tvg-id="mjh-al-jazeera" tvg-name="Al Jazeera" tvg-chno="169" tvg-logo="https://i.mjh.nz/.images/al-jazeera.png" group-title="News",Al Jazeera
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/al-jazeera.m3u8
-#EXTINF:-1 tvg-id="mjh-channel-news-asia" tvg-name="Channel News Asia (CNA)" tvg-chno="170" tvg-logo="https://i.mjh.nz/.images/channel-news-asia.png" group-title="News",Channel News Asia (CNA)
+#EXTINF:-1 tvg-id="ChannelNewsAsia.au" tvg-name="Channel News Asia (CNA)" tvg-chno="170" tvg-logo="https://i.mjh.nz/.images/channel-news-asia.png" group-title="News",Channel News Asia (CNA)
 #EXTVLCOPT:http-user-agent=otg/1.5.1 (AppleTv Apple TV 4; tvOS16.0; appletv.client) libcurl/7.58.0 OpenSSL/1.0.2o zlib/1.2.11 clib/1.8.56
 https://i.mjh.nz/.r/channel-news-asia.m3u8
 #EXTINF:-1 tvg-id="mjh-dw-news" tvg-name="DW English" tvg-chno="171" tvg-logo="https://www.dw.com/images/icons/favicon-540x540.png" group-title="News",DW English
