@@ -143,6 +143,7 @@
   // This small file is where that information comes from; the app reads it directly, every 10 minutes.
   var LIVE_URL = 'https://i.mjh.nz/au/Sydney/tv.json';
   var HLS_JS = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
+  var APP_URL = 'https://seanjudelyons.github.io/tv/app/index.html';   // this file, as published (see checkUpdate)
   var WINDOW_MIN = 150;           // minutes of guide shown across the grid
   var GROUP_ORDER = ['All', 'Favourites', 'Australian TV', 'News', 'Movies', 'Kids', 'Entertainment', 'Sports',
                      'Crime & Reality', 'Lifestyle & Docs', 'Music'];
@@ -490,9 +491,11 @@
 
   // Read the start of the channel's newest finished segment. -> Promise: is its sound labelled too low?
   function probeSound(url) {
-    var base = url;
+    var base = url, stop = window.AbortController ? new AbortController() : null;
+    var opt = stop ? { cache: 'no-store', signal: stop.signal } : { cache: 'no-store' };
+    if (stop) setTimeout(function () { try { stop.abort(); } catch (e) {} }, 20000);      // a hung request counts as a failure
     var text = function (u) {
-      return fetch(u, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); base = r.url || u; return r.text(); });
+      return fetch(u, opt).then(function (r) { if (!r.ok) throw new Error(r.status); base = r.url || u; return r.text(); });
     };
     var links = function (t) {
       return t.split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l && l.charAt(0) !== '#'; });
@@ -504,7 +507,7 @@
     }).then(function (t) {
       var l = links(t);
       if (t.indexOf('#EXTINF') < 0 || !l.length) return false;
-      return fetch(new URL(l[Math.max(0, l.length - 2)], base).href).then(function (r) {
+      return fetch(new URL(l[Math.max(0, l.length - 2)], base).href, opt).then(function (r) {
         if (!r.ok) throw new Error(r.status);
         if (!r.body || !r.body.getReader) return r.arrayBuffer().then(function (b) { return new Uint8Array(b); });
         var rd = r.body.getReader(), got = [], n = 0;
@@ -528,7 +531,8 @@
     store('sound', JSON.stringify(soundBad));
   }
   function badSound(c) { var t = soundBad[streamUrl(c)]; return !!t && Date.now() - t < SOUND_TTL; }
-  function checkSound(c, token) {
+  // tries: a check that could not be made (the network dropped out) is repeated, up to three more times.
+  function checkSound(c, token, tries) {
     var u = streamUrl(c);
     if (token !== playToken || hlsToken === token || (soundOk[u] && Date.now() - soundOk[u] < SOUND_TTL)) return;
     probeSound(u).then(function (wrong) {
@@ -536,7 +540,9 @@
       soundBad[u] = Date.now(); saveSound();
       if (token !== playToken) return;
       if (useAV) avFallback(token); else tryHls(token);
-    }).catch(function () {});
+    }).catch(function () {
+      if (token === playToken && (tries || 0) < 3) soundTimer = setTimeout(function () { checkSound(c, token, (tries || 0) + 1); }, 8000);
+    });
   }
 
   // Samsung's native player (only inside the installed TV app): plays any HLS stream, follows redirects,
@@ -589,12 +595,22 @@
       }, 25000);
     } catch (e) { avFallback(token); }
   }
+  // The TV usually keeps the app asleep in the background instead of closing it, so opening it again does not
+  // load a newer version. When it comes back (and on the green button): if the published app differs from the
+  // copy this one was started from (the launcher keeps that in localStorage.appHtml), start over.
+  function checkUpdate() {
+    var mine = load('appHtml');
+    if (!AV || !mine) return;
+    fetch(APP_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (t) { if (t.length > 1000 && t.indexOf('</html>') > 0 && t !== mine) location.reload(); })
+      .catch(function () {});
+  }
   if (AV) {
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
-        playToken++; clearTimeout(failTimer); clearTimeout(retryTimer);
+        playToken++; clearTimeout(failTimer); clearTimeout(retryTimer); clearTimeout(soundTimer);
         avStop(); stopHls(); try { video.pause(); } catch (e) {}
-      } else if (current) play(current);
+      } else { if (current) play(current); checkUpdate(); }
     });
   }
 
@@ -776,7 +792,7 @@
       else if (k === K.RIGHT) applyGroup(groupIdx + 1, true);
       else if (k === K.ENTER) { var c = list[sel]; if (c && c === current) setMode('watch'); else play(c); }
       else if (k === K.BACK || k === K.ESC || k === K.BACKSPACE) { if (current) setMode('watch'); }
-      else if (k === K.GREEN) loadData(false);
+      else if (k === K.GREEN) { loadData(false); checkUpdate(); }
       else if (k === K.PRECH && previous) play(previous);
       else handled = false;
     } else {
@@ -786,7 +802,7 @@
                k === K.CHLIST || k === K.GUIDE) setMode('guide');
       else if (k === K.INFO) showBanner();
       else if (k === K.PRECH && previous) play(previous);
-      else if (k === K.GREEN) loadData(false);
+      else if (k === K.GREEN) { loadData(false); checkUpdate(); }
       else handled = false;
     }
     if (handled) e.preventDefault();
