@@ -402,6 +402,143 @@
 
   function stopHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 
+  // ---------- sound labelled with the wrong sample rate ----------
+  // Some sources send AAC sound whose frame headers say e.g. 24,000 Hz when the sound really is 48,000 Hz
+  // (Cinemax Classics, Nov 2026). Players believe the header and can't decode it: picture, no sound. The
+  // timestamps give the real rate (how many frames arrive per second). So the app checks a channel shortly
+  // after it starts (checkSound) and plays a mislabelled one through hls.js, correcting the headers on the way
+  // in (SoundFixLoader). Only when frames arrive FASTER than the header allows: the other way round (CNN) is a
+  // source that leaves sound out, and relabelling that breaks what does play. tools/audio_check.py runs the
+  // same check from the Mac.
+  var RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  var PROBE_BYTES = 750000;       // how much of one segment checkSound reads
+  var SOUND_TTL = 6 * 3600000;    // check a channel again after this long
+  var soundOk = {}, soundBad = {}, soundPlays = {}, soundFails = {}, soundFix = null, soundTimer = null;
+  try { soundBad = JSON.parse(load('sound') || '{}') || {}; } catch (e) { soundBad = {}; }
+
+  // d: the bytes of an MPEG-TS segment, or just its start. -> null (no AAC sound found, or can't read it), else
+  // { said: rate (index into RATES) in the headers, real: rate the timestamps imply or -1 if unclear,
+  //   at: where in d each frame header keeps its rate }
+  function audioRate(d) {
+    var n = d.length, s = -1, i, j, k, o, p, pid = -1, len = 0, parts = [], marks = [];
+    for (i = 0; i < 1000 && i + 376 < n; i++) if (d[i] === 0x47 && d[i + 188] === 0x47 && d[i + 376] === 0x47) { s = i; break; }
+    if (s < 0) return null;
+    for (i = s; i + 188 <= n && d[i] === 0x47; i += 188) {
+      if (!(d[i + 3] & 0x10)) continue;
+      p = ((d[i + 1] & 0x1F) << 8) | d[i + 2];
+      o = i + 4 + ((d[i + 3] & 0x20) ? 1 + d[i + 4] : 0);
+      if (o >= i + 188) continue;
+      if (d[i + 1] & 0x40) {            // a new packet of sound or picture starts here; marks = [offset in the sound, timestamp]
+        if (o + 14 > i + 188 || d[o] !== 0 || d[o + 1] !== 0 || d[o + 2] !== 1 || d[o + 3] < 0xC0 || d[o + 3] > 0xDF) continue;
+        if (pid < 0) pid = p;
+        if (p !== pid) continue;
+        if (d[o + 7] & 0x80) marks.push([len, (d[o + 9] & 0x0E) * 536870912 + d[o + 10] * 4194304 + (d[o + 11] & 0xFE) * 16384 + d[o + 12] * 128 + (d[o + 13] >> 1)]);
+        o += 9 + d[o + 8];
+        if (o >= i + 188) continue;
+      } else if (p !== pid) continue;
+      parts.push(o, i + 188); len += i + 188 - o;
+    }
+    if (marks.length < 3) return null;
+    var es = new Uint8Array(len), pos = new Uint32Array(len), starts = [], at = [], said = -1, size;
+    for (i = 0, k = 0; i < parts.length; i += 2) for (j = parts[i]; j < parts[i + 1]; j++) { es[k] = d[j]; pos[k++] = j; }
+    for (i = 0; i + 7 <= len; i += size) {
+      if (es[i] !== 0xFF || (es[i + 1] & 0xF6) !== 0xF0) return null;     // not AAC (AC-3, MP2...) or damaged: leave it alone
+      size = ((es[i + 3] & 3) << 11) | (es[i + 4] << 3) | (es[i + 5] >> 5);
+      if (size < 7) return null;
+      if (said < 0) said = (es[i + 2] >> 2) & 15;
+      else if (((es[i + 2] >> 2) & 15) !== said) return null;
+      starts.push(i); at.push(pos[i + 2]);
+    }
+    if (said < 0 || said >= RATES.length) return null;
+    var rate = function (m0, m1) {      // frames between two timestamps -> the standard rate that fits, or -1
+      var c = 0, t = m1[1] - m0[1], x, q, best = -1;
+      if (t < 0) t += 8589934592;
+      for (x = 0; x < starts.length; x++) if (starts[x] >= m0[0] && starts[x] < m1[0]) c++;
+      if (c < 4 || !t) return -1;
+      q = c * 1024 * 90000 / t;
+      for (x = 0; x < RATES.length; x++) if (Math.abs(RATES[x] - q) < 0.04 * RATES[x]) best = x;
+      return best;
+    };
+    var whole = rate(marks[0], marks[marks.length - 1]), half = rate(marks[0], marks[marks.length >> 1]);
+    return { said: said, real: whole === half ? whole : -1, at: at };
+  }
+  function tooLow(r) { return !!r && r.real >= 0 && RATES[r.real] > RATES[r.said]; }
+
+  // Correct the headers of one segment in place (hls.js is about to read it).
+  function fixSound(d) {
+    var r = audioRate(d), to = -1, i;
+    if (!r) return false;
+    if (r.real >= 0) { to = tooLow(r) ? r.real : -1; soundFix = to < 0 ? null : [r.said, to]; }
+    else if (soundFix && soundFix[0] === r.said) to = soundFix[1];      // unclear segment: do as for the one before
+    if (to < 0) return false;
+    for (i = 0; i < r.at.length; i++) d[r.at[i]] = (d[r.at[i]] & 0xC3) | (to << 2);
+    return true;
+  }
+  // hls.js's own segment loader, with fixSound applied to what it downloads.
+  function SoundFixLoader(config) {
+    var L = new window.Hls.DefaultConfig.loader(config), load = L.load;
+    L.load = function (context, cfg, cb) {
+      var ok = cb.onSuccess;
+      cb.onSuccess = function (resp, stats, ctx, net) {
+        try { if (resp && resp.data instanceof ArrayBuffer) fixSound(new Uint8Array(resp.data)); } catch (e) {}
+        ok(resp, stats, ctx, net);
+      };
+      return load.call(L, context, cfg, cb);
+    };
+    return L;
+  }
+
+  // Read the start of the channel's newest finished segment. -> Promise: is its sound labelled too low?
+  function probeSound(url) {
+    var base = url;
+    var text = function (u) {
+      return fetch(u, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); base = r.url || u; return r.text(); });
+    };
+    var links = function (t) {
+      return t.split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l && l.charAt(0) !== '#'; });
+    };
+    return text(url).then(function (t) {
+      if (t.indexOf('#EXTINF') >= 0) return t;
+      if (/TYPE=AUDIO/.test(t) || !links(t).length) return '';              // separate audio track: not this problem
+      return text(new URL(links(t)[0], base).href);
+    }).then(function (t) {
+      var l = links(t);
+      if (t.indexOf('#EXTINF') < 0 || !l.length) return false;
+      return fetch(new URL(l[Math.max(0, l.length - 2)], base).href).then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        if (!r.body || !r.body.getReader) return r.arrayBuffer().then(function (b) { return new Uint8Array(b); });
+        var rd = r.body.getReader(), got = [], n = 0;
+        var more = function () {
+          return rd.read().then(function (x) {
+            if (x.value) { got.push(x.value); n += x.value.length; }
+            if (!x.done && n < PROBE_BYTES) return more();
+            try { rd.cancel(); } catch (e) {}
+            var d = new Uint8Array(n), k = 0, i;
+            for (i = 0; i < got.length; i++) { d.set(got[i], k); k += got[i].length; }
+            return d;
+          });
+        };
+        return more();
+      }).then(function (d) { return tooLow(audioRate(d)); });
+    });
+  }
+  function saveSound() {
+    var u, t = Date.now();
+    for (u in soundBad) if (t - soundBad[u] > SOUND_TTL) delete soundBad[u];
+    store('sound', JSON.stringify(soundBad));
+  }
+  function badSound(c) { var t = soundBad[streamUrl(c)]; return !!t && Date.now() - t < SOUND_TTL; }
+  function checkSound(c, token) {
+    var u = streamUrl(c);
+    if (token !== playToken || hlsToken === token || (soundOk[u] && Date.now() - soundOk[u] < SOUND_TTL)) return;
+    probeSound(u).then(function (wrong) {
+      if (!wrong) { soundOk[u] = Date.now(); return; }
+      soundBad[u] = Date.now(); saveSound();
+      if (token !== playToken) return;
+      if (useAV) avFallback(token); else tryHls(token);
+    }).catch(function () {});
+  }
+
   // Samsung's native player (only inside the installed TV app): plays any HLS stream, follows redirects,
   // no CORS limits, honours per-channel user agents. Rendered through the <object id="av"> hole.
   var AV = null, useAV = false;
@@ -467,10 +604,12 @@
     if (current && current !== c) previous = current;
     current = c; store('last', c.url);
     var token = ++playToken;
-    stopHls(); clearTimeout(failTimer); clearTimeout(retryTimer);
+    stopHls(); clearTimeout(failTimer); clearTimeout(retryTimer); clearTimeout(soundTimer);
     if (!quiet) { hideMsg(); spin(true); }
+    var viaHls = plutoUrl(c) || badSound(c);     // badSound: found earlier to need its sound headers corrected
+    if (!viaHls) soundTimer = setTimeout(function () { checkSound(c, token); }, 2500);
     // Pluto / Samsung TV Plus (jmp2.uk) streams have a separate audio track that AVPlay plays silently -> hls.js.
-    if (AV && !/jmp2\.uk\//.test(c.url)) {
+    if (AV && !/jmp2\.uk\//.test(c.url) && !viaHls) {
       useAV = true; setPlayerClass();
       if (!quiet) { if (mode === 'guide') renderRows(); else showBanner(); }
       avPlay(c, token);
@@ -479,7 +618,7 @@
     if (AV) { avStop(); useAV = false; setPlayerClass(); }
     video.removeAttribute('src'); try { video.load(); } catch (e) {}
     if (!quiet) { if (mode === 'guide') renderRows(); else showBanner(); }
-    if (plutoUrl(c)) { tryHls(token); return; }
+    if (viaHls) { tryHls(token); return; }
     video.src = streamUrl(c);
     var pr = video.play(); if (pr && pr.catch) pr.catch(function () {});
     failTimer = setTimeout(function () { if (token === playToken) tryHls(token); }, 12000);
@@ -490,6 +629,12 @@
   function fail(token) {
     if (token !== playToken) return;
     clearTimeout(failTimer); clearTimeout(retryTimer); spin(false); stopHls(); avStop();
+    // A channel sent to hls.js for its sound that has never played there and fails twice running: back to the
+    // native player for ten minutes (a picture without sound beats no picture), then it is checked again.
+    var u = current ? streamUrl(current) : '';
+    if (AV && soundBad[u] && !soundPlays[u] && (soundFails[u] = (soundFails[u] || 0) + 1) >= 2) {
+      delete soundBad[u]; saveSound(); soundOk[u] = Date.now() - SOUND_TTL + 600000;
+    }
     showMsg('This channel isn’t available right now', 'Still trying. You can also pick another channel.');
     retryTimer = setTimeout(function () { if (token === playToken && current) play(current, true); }, RETRY_MS);
   }
@@ -522,7 +667,8 @@
       if (!window.Hls || !window.Hls.isSupported()) return fail(token);
       stopHls();
       video.removeAttribute('src'); try { video.load(); } catch (e) {}
-      var h = hls = new window.Hls({ maxBufferLength: 30, enableWorker: true });
+      soundFix = null;
+      var h = hls = new window.Hls({ maxBufferLength: 30, enableWorker: true, fLoader: SoundFixLoader });
       hlsBusyAt = Date.now();
       h.on(window.Hls.Events.MANIFEST_PARSED, function () { var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); });
       var busy = function () { hlsBusyAt = Date.now(); };   // data is arriving, however slowly
@@ -559,7 +705,10 @@
     retryTimer = setTimeout(function () { startHls(token); }, HLS_RESTART_MS);
   }
 
-  video.addEventListener('playing', function () { clearTimeout(failTimer); spin(false); hideMsg(); hlsGoodAt = Date.now(); });
+  video.addEventListener('playing', function () {
+    clearTimeout(failTimer); spin(false); hideMsg(); hlsGoodAt = Date.now();
+    if (hls && current) soundPlays[streamUrl(current)] = 1;
+  });
   video.addEventListener('waiting', function () { spin(true); });
   var lastT = -1;
   video.addEventListener('timeupdate', function () {
