@@ -148,6 +148,12 @@
   var all = [], groups = [], groupIdx = 0, list = [], sel = 0, top = 0;
   var guide = {}, pluto = {}, current = null, previous = null, mode = 'guide';
   var bannerTimer = null, numTimer = null, numBuf = '', playToken = 0, failTimer = null, hls = null, hlsLoading = null;
+  // hls.js recovery (the TV's Wi-Fi drops out for seconds at a time; see tryHls)
+  var HLS_START_MS = 15000;     // no picture and no data for this long -> rebuild the player
+  var HLS_RESTART_MS = 2000;    // pause before a rebuild
+  var HLS_GIVE_UP_MS = 20000;   // no picture for this long -> show the message (and keep trying)
+  var RETRY_MS = 10000;         // while the message is up, start over this often
+  var retryTimer = null, hlsToken = 0, hlsGoodAt = 0, hlsBusyAt = 0, mediaFixes = 0;
 
   // ---------- helpers ----------
   function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -196,13 +202,26 @@
     return out;
   }
 
+  // Every refresh of the channel list builds new channel objects, so "the same channel" is found by its address.
+  function indexOfCh(arr, c) {
+    if (!c) return -1;
+    var at = arr.indexOf(c);
+    for (var i = 0; at < 0 && i < arr.length; i++) if (arr[i].url === c.url) at = i;
+    return at;
+  }
+
   function setChannels(chs) {
     all = chs;
+    // keep pointing at the channel that is playing (else the guide loses its place and OK restarts the stream)
+    if (current) current = all[indexOfCh(all, current)] || current;
+    if (previous) previous = all[indexOfCh(all, previous)] || previous;
     var seen = {};
     all.forEach(function (c) { c.groups.forEach(function (g) { seen[g] = 1; }); });
     groups = GROUP_ORDER.filter(function (g) { return g === 'All' || seen[g]; });
     Object.keys(seen).forEach(function (g) { if (groups.indexOf(g) < 0) groups.push(g); });
+    var keepTop = top;
     applyGroup(Math.min(groupIdx, groups.length - 1), true);
+    if (keepTop) { top = keepTop; render(); }
   }
 
   function applyGroup(i, keepSel) {
@@ -211,8 +230,8 @@
     var g = groups[groupIdx];
     list = g === 'All' ? all.slice() : all.filter(function (c) { return c.groups.indexOf(g) >= 0; });
     var at = -1;
-    if (keepSel && keepCh) at = list.indexOf(keepCh);
-    if (at < 0 && current) at = list.indexOf(current);
+    if (keepSel && keepCh) at = indexOfCh(list, keepCh);
+    if (at < 0 && current) at = indexOfCh(list, current);
     sel = Math.max(0, at); top = 0;
     store('group', g);
     render();
@@ -398,70 +417,116 @@
   }
   if (AV) {
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) { avStop(); stopHls(); try { video.pause(); } catch (e) {} }
-      else if (current) play(current);
+      if (document.hidden) {
+        playToken++; clearTimeout(failTimer); clearTimeout(retryTimer);
+        avStop(); stopHls(); try { video.pause(); } catch (e) {}
+      } else if (current) play(current);
     });
   }
 
-  function play(c) {
+  // quiet = a background retry of the channel that is already on: leave the message and banner alone.
+  function play(c, quiet) {
     if (!c) return;
     if (current && current !== c) previous = current;
     current = c; store('last', c.url);
     var token = ++playToken;
-    stopHls(); hideMsg(); spin(true); clearTimeout(failTimer);
+    stopHls(); clearTimeout(failTimer); clearTimeout(retryTimer);
+    if (!quiet) { hideMsg(); spin(true); }
     // Pluto / Samsung TV Plus (jmp2.uk) streams have a separate audio track that AVPlay plays silently -> hls.js.
     if (AV && !/jmp2\.uk\//.test(c.url)) {
       useAV = true; setPlayerClass();
-      if (mode === 'guide') renderRows(); else showBanner();
+      if (!quiet) { if (mode === 'guide') renderRows(); else showBanner(); }
       avPlay(c, token);
       return;
     }
     if (AV) { avStop(); useAV = false; setPlayerClass(); }
     video.removeAttribute('src'); try { video.load(); } catch (e) {}
-    if (mode === 'guide') renderRows(); else showBanner();
+    if (!quiet) { if (mode === 'guide') renderRows(); else showBanner(); }
     if (plutoUrl(c)) { tryHls(token); return; }
     video.src = streamUrl(c);
     var pr = video.play(); if (pr && pr.catch) pr.catch(function () {});
     failTimer = setTimeout(function () { if (token === playToken) tryHls(token); }, 12000);
   }
 
+  // Nothing has played for a while: say so, but keep starting over in the background. The usual cause is the
+  // network dropping out for a moment, and then the channel comes back by itself (the message hides on 'playing').
   function fail(token) {
     if (token !== playToken) return;
-    clearTimeout(failTimer); spin(false); stopHls(); avStop();
-    showMsg('This channel isn’t available right now', 'Try another channel.');
+    clearTimeout(failTimer); clearTimeout(retryTimer); spin(false); stopHls(); avStop();
+    showMsg('This channel isn’t available right now', 'Still trying. You can also pick another channel.');
+    retryTimer = setTimeout(function () { if (token === playToken && current) play(current, true); }, RETRY_MS);
   }
 
   function loadHlsJs() {
     if (window.Hls) return Promise.resolve();
     if (hlsLoading) return hlsLoading;
     hlsLoading = new Promise(function (res, rej) {
-      var s = document.createElement('script'); s.src = HLS_JS; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      var s = document.createElement('script'); s.src = HLS_JS; s.onload = res;
+      s.onerror = function () { hlsLoading = null; try { s.parentNode.removeChild(s); } catch (e) {} rej(); };   // retry next time
+      document.head.appendChild(s);
     });
     return hlsLoading;
   }
 
+  // hls.js player. When the network stalls for 10+ seconds hls.js stops with a "fatal" error; that is not a dead
+  // channel. So: rebuild the player and try again, and only show the message after HLS_GIVE_UP_MS without a picture.
   function tryHls(token) {
     if (token !== playToken || !current) return;
-    if (current._hlsTried === token) return fail(token);
-    current._hlsTried = token;
+    if (hlsToken === token) return;            // already playing this channel through hls.js
+    hlsToken = token; hlsGoodAt = Date.now(); mediaFixes = 0;
+    startHls(token);
+  }
+
+  function startHls(token) {
+    if (token !== playToken || !current) return;
     clearTimeout(failTimer);
     loadHlsJs().then(function () {
       if (token !== playToken) return;
       if (!window.Hls || !window.Hls.isSupported()) return fail(token);
+      stopHls();
       video.removeAttribute('src'); try { video.load(); } catch (e) {}
-      hls = new window.Hls({ maxBufferLength: 30, enableWorker: true });
-      hls.on(window.Hls.Events.MANIFEST_PARSED, function () { var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); });
-      hls.on(window.Hls.Events.ERROR, function (e, d) { if (d && d.fatal) fail(token); });
-      hls.loadSource(streamUrl(current)); hls.attachMedia(video);
-      failTimer = setTimeout(function () { if (video.readyState < 2) fail(token); }, 15000);
-    }).catch(function () { fail(token); });
+      var h = hls = new window.Hls({ maxBufferLength: 30, enableWorker: true });
+      hlsBusyAt = Date.now();
+      h.on(window.Hls.Events.MANIFEST_PARSED, function () { var pr = video.play(); if (pr && pr.catch) pr.catch(function () {}); });
+      var busy = function () { hlsBusyAt = Date.now(); };   // data is arriving, however slowly
+      h.on(window.Hls.Events.MANIFEST_PARSED, busy); h.on(window.Hls.Events.LEVEL_LOADED, busy);
+      h.on(window.Hls.Events.FRAG_LOADED, busy);
+      h.on(window.Hls.Events.ERROR, function (e, d) {
+        if (!d || !d.fatal || h !== hls || token !== playToken) return;
+        if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR && mediaFixes < 2) {
+          mediaFixes++;
+          try { h.recoverMediaError(); return; } catch (x) {}
+        }
+        restartHls(token);
+      });
+      h.loadSource(streamUrl(current)); h.attachMedia(video);
+      watchHls(token, h);
+    }).catch(function () { restartHls(token); });
   }
 
-  video.addEventListener('playing', function () { clearTimeout(failTimer); spin(false); hideMsg(); });
+  // Start-up watchdog: restart a player that shows nothing, unless it is still receiving data (slow, not stuck).
+  function watchHls(token, h) {
+    clearTimeout(failTimer);
+    failTimer = setTimeout(function () {
+      if (token !== playToken || h !== hls || video.readyState >= 2) return;
+      if (Date.now() - hlsBusyAt < HLS_START_MS) return watchHls(token, h);
+      restartHls(token);
+    }, HLS_START_MS);
+  }
+
+  function restartHls(token) {
+    if (token !== playToken) return;
+    clearTimeout(failTimer); clearTimeout(retryTimer); stopHls();
+    if (Date.now() - hlsGoodAt > HLS_GIVE_UP_MS) return fail(token);
+    spin(true);
+    retryTimer = setTimeout(function () { startHls(token); }, HLS_RESTART_MS);
+  }
+
+  video.addEventListener('playing', function () { clearTimeout(failTimer); spin(false); hideMsg(); hlsGoodAt = Date.now(); });
   video.addEventListener('waiting', function () { spin(true); });
   var lastT = -1;
   video.addEventListener('timeupdate', function () {
-    if (video.currentTime !== lastT && !video.paused) { spin(false); clearTimeout(failTimer); }
+    if (video.currentTime !== lastT && !video.paused) { spin(false); clearTimeout(failTimer); hlsGoodAt = Date.now(); }
     lastT = video.currentTime;
   });
   video.addEventListener('error', function () { var t = playToken; if (!hls) tryHls(t); });
@@ -583,6 +648,12 @@
     });
     setInterval(function () { if (mode === 'guide') render(); }, 60000);
     setInterval(function () { loadData(false); }, 30 * 60000);
+    // A picture that froze without hls.js reporting an error: treat it like any other failure.
+    setInterval(function () {
+      var t = Date.now();
+      if (hls && hlsToken === playToken && !document.hidden && t - hlsGoodAt > HLS_GIVE_UP_MS + HLS_START_MS &&
+          t - hlsBusyAt > HLS_START_MS) restartHls(playToken);
+    }, 5000);
     window.addEventListener('resize', render);
   }
   start();
